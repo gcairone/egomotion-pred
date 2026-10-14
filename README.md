@@ -1,24 +1,17 @@
-# egopred: ego trajectory prediction from front-camera video
+# Predicting the ego trajectory from a front camera
 
-Predict where the car will be over the next 4 seconds from 2 seconds of front-camera video, the
-car's own recent motion and a high-level navigation command (left / straight / right). The main
-question is **how much the camera adds on top of kinematics, and in which situations**. Every
-model is therefore reported next to a kinematics-only twin and a physics baseline, broken down
-by scenario.
+This project predicts where a car will drive over the next 4 seconds. It uses the last 2 seconds
+of front-camera video, the car's own recent motion and the navigation command (left / straight /
+right). The question behind it is how much the camera actually adds on top of the car's
+kinematics, and in which situations.
 
+- **Data:** [NAVSIM](https://github.com/autonomousvision/navsim) (`navtrain` for training, `navtest` for evaluation), built on [OpenScene](https://github.com/OpenDriveLab/OpenScene) / [nuPlan](https://www.nuscenes.org/nuplan).
 - **Input:**
-  - front camera (CAM_F0) at t0 − 1.5, −1.0, −0.5 and 0 s;
+  - front-camera frames at t0 − 1.5, −1.0, −0.5 and 0 s;
   - ego poses over the same 2 s, plus current velocity, acceleration and yaw rate;
-  - the NAVSIM driving command.
-- **Output:** 8 future waypoints (x, y, yaw) at 0.5 s steps, a 4 s horizon, in the ego frame at t0.
-- **Metrics:**
-  - ADE / FDE of the most likely trajectory;
-  - miss rate (FDE > 2 m);
-  - lateral and longitudinal error relative to the true heading;
-  - minADE for multimodal models.
-
-  Results are also split by scenario: turn left / right, curve, lateral shift, brake, accelerate, start, cruise. These are open-loop displacement metrics, not the closed-loop NAVSIM PDM score: the question is prediction quality, not driving.
-- **Data:** [NAVSIM](https://github.com/autonomousvision/navsim) (`navtrain` / `navtest`), built on [OpenScene](https://github.com/OpenDriveLab/OpenScene) / [nuPlan](https://www.nuscenes.org/nuplan).
+  - the driving command.
+- **Output:** 8 waypoints (x, y, yaw) at 0.5 s steps in the ego frame.
+- **Metrics:** ADE / FDE of the most likely trajectory, miss rate (FDE > 2 m), and lateral / longitudinal error. These are open-loop metrics, broken down by scenario.
 
 <p align="center"><img src="assets/turn_right.gif" width="100%"></p>
 <p align="center"><img src="assets/braking.gif" width="100%"></p>
@@ -26,142 +19,72 @@ by scenario.
 <p align="center"><img src="assets/random_window.gif" width="100%"></p>
 
 <sub>navtest, consecutive samples at 2 Hz from a single drive.
-<b>Green</b>: ground truth. <b>Blue</b>: model A (kinematics + command). <b>Orange</b>: model C (vision + kinematics + command).
-Left: front camera with the 4 s trajectories projected through the real calibration and lens distortion. Right: the same trajectories in a 3D view over a ground grid.
-The first three windows were selected as the ones where C beats A by the largest margin: a right turn (mean ADE 1.47 → 0.42 m), braking behind a bus (1.30 → 0.44 m) and a 12 s curvy stretch (1.23 → 0.64 m).
-The last window is a random draw (0.87 → 0.52 m). Random windows are not always this favourable: in 4 out of 6 random windows A has the lower mean ADE, because on regular driving kinematics are enough.</sub>
+<b>Green</b>: ground truth. <b>Blue</b>: model A (kinematics only). <b>Orange</b>: model C (camera + kinematics).
+Left: camera frame with the trajectories projected through the real calibration. Right: the same trajectories in a 3D view.
+The first three clips are where C beats A by the most: a right turn (mean ADE 1.47 → 0.42 m), braking behind a bus (1.30 → 0.44 m) and a curvy stretch (1.23 → 0.64 m).
+The last clip is a random pick (0.87 → 0.52 m). Random clips are not always this favourable: in 4 out of 6, A has the lower mean ADE, because on regular driving kinematics are enough.</sub>
 
-## Results at a glance
+## Results
 
-On navtest (12,146 samples, drives never seen in training), errors are in metres over a 4 s horizon, scored on the most likely trajectory:
+navtest: 12,146 samples from drives never seen in training. Errors are in metres over 4 s.
 
-| model | inputs | ADE | FDE | miss rate (FDE > 2 m) | lateral err. | longitudinal err. |
+| model | inputs | ADE | FDE | miss rate | lateral | longitudinal |
 |---|---|---|---|---|---|---|
-| B0: constant speed and yaw rate | current dynamics | 2.41 | 5.97 | — | — | — |
-| **A** | kinematics + command | 0.783 | 2.04 | 39.5 % | 0.31 | 0.62 |
-| **B** | vision + speed + command | 1.194 | 2.61 | 50.9 % | 0.34 | 1.05 |
-| **C** | vision + kinematics + command | 0.719 | 1.68 | 30.0 % | 0.23 | 0.62 |
-| **C**, final recipe | + visual-input augmentation, aux. loss | **0.693** | **1.66** | **29.8 %** | **0.23** | **0.59** |
+| B0 | constant speed and yaw rate | 2.41 | 5.97 | — | — | — |
+| A | kinematics | 0.783 | 2.04 | 39.5 % | 0.31 | 0.62 |
+| B | camera + current speed | 1.194 | 2.61 | 50.9 % | 0.34 | 1.05 |
+| C | camera + kinematics | 0.719 | 1.68 | 30.0 % | 0.23 | 0.62 |
+| C, final | + input augmentation, auxiliary loss | **0.693** | **1.66** | **29.8 %** | **0.23** | **0.59** |
 
-- **Vision helps:** C is 11 % better than A in ADE, 19 % in FDE and 25 % in miss rate. The ranking is the same on the validation split.
-- **The gain is lateral, i.e. road geometry.** The lateral error drops by 26 %, while the longitudinal error (when to brake or accelerate) barely moves.
+All learned models also receive the driving command.
+
+- **The camera helps.** C improves on A by 11 % in ADE, 19 % in FDE and 25 % in miss rate, with the same ranking on the validation split.
+- **The gain is mostly lateral, i.e. road geometry.** The lateral error drops by 26 % and FDE improves by 25–29 % on curves and turns. The longitudinal error (when to brake or accelerate) barely moves.
 - **The gain grows with the horizon.** At 1 s C is slightly worse than A (0.17 vs 0.14 m); at 4 s it is clearly better (1.66 vs 2.04 m).
-- **The camera anticipates braking but does not help once it has started.** At the onset of strong braking C cuts the FDE by 37 %; during braking that is already under way it is 3 % worse.
+- **The camera anticipates braking, but does not help once braking has started.** C cuts the FDE by 37 % at the onset of strong braking, and is 3 % worse during braking already under way.
 
-## Data pipeline
+## How it works
 
-All data handling runs on a CPU machine with a ~75 GB data disk, against source archives several times that size, so everything is shard-by-shard, resumable and tracked in a SQLite manifest (`pending → done → verified`).
+**Data.**
+- The source archives are far larger than the local disk, so everything is processed shard by shard, tracked in a SQLite manifest so runs can resume.
+- The camera archives are streamed and only the front-camera frames that NAVSIM samples use are kept, re-encoded at 960×540 (~14 GB).
+- Each sample stores its ego-frame history and future, the kinematic inputs, QC flags and a scenario tag.
+- Splits are by drive: 91k train / 11k val from `navtrain`, plus the official `navtest`.
 
-1. **Metadata.** The OpenScene pickles (poses at 2 Hz, dynamic state, driving command, camera calibration) are streamed and converted to one Parquet file per log.
-2. **Frames.** OpenScene camera archives hold all 8 cameras. They are streamed (`curl | tar`) and only CAM_F0 is kept, for the frames NAVSIM samples actually use (current and history). Frames are re-encoded at 960×540 (JPEG q85) into tar shards with an offset index for random access. Hundreds of GB are streamed and ~14 GB kept.
-3. **Sample tables.** For every NAVSIM token the pipeline builds:
-   - ego-frame history and future;
-   - the kinematic inputs;
-   - QC flags (timestamp gaps, pose jumps);
-   - scenario tags;
-   - a deterministic sample ID.
+**Features.**
+- Frozen DINOv2 ViT-B/14 with registers, run once offline, so training never touches images.
+- Per frame: the CLS token, plus the patch grid pooled to 6×10 cells and reduced to 256-d with PCA.
+- ~5 GB for 170k frames, which fits in GPU memory: a 30-epoch run takes about 10 minutes on an RTX 3090.
 
-   Splits are by drive, never by frame:
-
-   | split | samples | drives |
-   |---|---|---|
-   | navtrain train | 91,924 (91,020 after QC) | 141 |
-   | navtrain val | 11,364 | 21 |
-   | navtest (official) | 12,146 | 44 |
-
-4. **Sanity gates.** Before any training the pipeline checks that projected ground-truth trajectories line up with the road, that video and pose are in sync (visual-odometry yaw rate vs pose yaw rate), that the baselines behave as expected, and that the model can overfit a small subset.
-
-## Architecture
-
-**Visual features.** The backbone is **frozen** and run once offline: training never decodes an image.
-
-- **Backbone:** DINOv2 ViT-B/14 with registers (`vit_base_patch14_reg4_dinov2.lvd142m`, via timm), input 518×294.
-- **Per frame:**
-  - the CLS token (768-d);
-  - the patch grid, average-pooled to 6×10 cells and projected to 256-d with a PCA fitted on 4,000 training frames.
-- **Size:** ~5 GB in float16 for ~170k frames, small enough to keep the whole training set resident in GPU memory. A full 30-epoch run takes 8–15 minutes on an RTX 3090.
-
-**Model.** All variants share one transformer and differ only in which tokens they see:
+**Model.** One transformer for all variants. They differ only in the input tokens:
 
 ```
-kinematics (history poses, v, a, yaw rate, command) ──► MLP ──► 1 token ┐
-CLS of 4 frames            ──► linear + time embedding ──► 4 tokens    ├─► Transformer encoder (4 layers, d=256, 8 heads)
-6×10 grid of 4 frames      ──► linear + time + cell embedding ──► 240 tokens ┘                 │
-                                                                                               ▼
-                                         K learned queries ──► Transformer decoder (2 layers) ──► K × (trajectory, logit)
+kinematics + command  ──► MLP ──────────────────────────► 1 token    ┐
+CLS × 4 frames        ──► linear + time embedding ──────► 4 tokens   ├─► encoder (4 layers, d=256) ──► decoder with K queries ──► K trajectories + scores
+6×10 grid × 4 frames  ──► linear + time/cell embedding ─► 240 tokens ┘
 ```
 
-| variant | kinematics | vision |
-|---|---|---|
-| B0 | constant velocity / constant speed and yaw rate (no learning) | — |
-| A | full history + current dynamics + command | — |
-| B | current speed + command only | CLS + grid |
-| C | full history + current dynamics + command | CLS + grid |
-
-**Multimodal head with anchors**
-- Each of the K queries predicts an offset from a fixed anchor trajectory, the k-means centres of the training futures.
-- The query whose anchor is closest to the ground truth wins: it gets the regression loss, and its logit is trained with cross-entropy.
-- Because the winner depends on the anchors and not on the predictions, mode assignment is stable. Plain winner-takes-all left the mode logits at chance level.
-- With K=6 the best of the six modes reaches minADE ≈ 0.70 m. For top-1 accuracy, K=1 is better, because ADE rewards the conditional mean.
-
-**Training**
-- AdamW, lr 1e-4 with warmup and cosine decay, weight decay 0.01, dropout 0.1, batch 256, 30 epochs, mixed precision.
-- The checkpoint with the best top-1 ADE on val is kept.
-
-**Final recipe (C, K=1)**
-- **Train-time augmentation of the visual inputs:** Gaussian noise in feature-std units, and dropped past frames, grid cells or the whole vision input. Dropped tokens are masked out of the attention instead of being filled.
-- **A training-only auxiliary head** that predicts how the features of the frames at t0 + 1 s and t0 + 2 s change.
-- Together they are worth about 3–4 % ADE on navtest.
-
-## Repository layout
-
-```
-egopred/
-  openscene/       metadata, frame shards, sample tables (targets, kinematics, QC, scenario tags)
-  stream.py        streaming download/extraction with retries
-  manifest.py      SQLite manifest of pipeline items
-  trajectory.py    ego-frame windows, scenario tagging, B0 baselines, displacement metrics
-  geometry.py      SE(3), projection with lens distortion
-  sync.py, g0.py   video/pose synchronisation check and projection overlays
-  g1.py            B0 baselines by scenario
-  features.py      frozen DINOv2 feature extraction + PCA
-  model.py         transformer model, anchors, auxiliary future head
-  train.py         training, evaluation, export of predictions
-  figures.py, viz.py  figures and GIFs from exported predictions
-  comma2k19.py     loader for comma2k19 segments (development dataset)
-scripts/           ingest and GPU-session helpers
-tests/             pytest suite
-```
+- **A:** kinematics token only. **B:** vision tokens + current speed. **C:** all tokens.
+- **Anchors:** each query predicts an offset from a k-means anchor trajectory, and the query whose anchor is nearest the ground truth gets the loss. This keeps mode assignment stable; plain winner-takes-all did not train.
+- **Final model:** K=1, plus two training-only additions: feature noise and token dropout on the visual inputs, and an auxiliary head predicting the features 1–2 s ahead.
 
 ## Usage
 
-Everything runs in a Docker image (CPU) except feature extraction and training, which need a GPU.
-
 ```bash
-make image                                   # build the dev image
-make test                                    # test suite
-
-# data (CPU)
-make run ARGS="meta --split trainval" && make run ARGS="meta --split test"
-make ingest                                  # front-camera frames for navtrain + navtest
-make run ARGS="samples --split trainval --name navtrain --filter navtrain"
+make image && make test                       # Docker dev image (CPU) and test suite
+make ingest                                   # front-camera frames (CPU, streaming)
 make run ARGS="samples --split test --name navtest --filter navtest"
-make run ARGS="g1 navtrain navtest"          # B0 baselines
 
-# GPU
-python -m egopred features --device cuda
-python -m egopred train --name A --variant A --anchors --lr 1e-4 --k 1 --device cuda
-python -m egopred train --name C --variant C --anchors --lr 1e-4 --k 1 \
-    --aug-noise 0.5 --aug-frame-drop 0.5 --aug-token-drop 0.5 --aug-vision-drop 0.1 \
-    --future 1,2 --device cuda
+python -m egopred features --device cuda      # GPU from here on
+for v in A C; do python -m egopred train --name $v --variant $v --anchors --lr 1e-4 --k 1 --device cuda; done
 python -m egopred compare A C --split test
-python -m egopred export A C --device cuda   # predictions for figures, no GPU needed afterwards
-python -m egopred gif --a A --c C --pick random
 ```
 
-## Data and licences
+Code: `egopred/` (pipeline, features, model, training, figures), `scripts/` (ingest and GPU-session helpers), `tests/`.
 
-Camera frames shown in this README come from the [nuPlan](https://www.nuscenes.org/nuplan) dataset (Motional) as distributed by [OpenScene](https://github.com/OpenDriveLab/OpenScene). They are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) and the nuPlan Dataset License Agreement for Non-Commercial Use. The GIFs in `assets/` are derived from those frames (resized, predicted trajectories drawn on top) and are released under the same CC BY-NC-SA 4.0 terms. No dataset content is included in this repository beyond these figures.
+## Data licence
+
+The camera frames in the GIFs come from [nuPlan](https://www.nuscenes.org/nuplan) (Motional) as distributed by [OpenScene](https://github.com/OpenDriveLab/OpenScene), under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) and the nuPlan non-commercial licence. The GIFs in `assets/` are derived from them and released under CC BY-NC-SA 4.0.
 
 ## References
 
