@@ -12,3 +12,4 @@ outputs/
 
 *.md
 !README.md
+vastai_scripts/
