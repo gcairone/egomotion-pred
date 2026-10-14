@@ -9,3 +9,6 @@ __pycache__/
 data/
 outputs/
 .pytest_cache/
+
+*.md
+!README.md
