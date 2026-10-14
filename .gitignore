@@ -1,0 +1,11 @@
+CLAUDE.md
+spec.md
+.claude/
+
+__pycache__/
+*.pyc
+.venv/
+
+data/
+outputs/
+.pytest_cache/
