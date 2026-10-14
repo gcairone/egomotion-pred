@@ -165,7 +165,8 @@ Camera frames shown in this README come from the [nuPlan](https://www.nuscenes.o
 
 ## References
 
-- Dauner et al., *NAVSIM: Data-Driven Non-Reactive Autonomous Vehicle Simulation and Benchmarking*, NeurIPS 2024.
-- OpenScene Contributors, *OpenScene: The Largest Up-to-Date 3D Occupancy Prediction Benchmark in Autonomous Driving*, 2023.
-- Caesar et al., *nuPlan: A closed-loop ML-based planning benchmark for autonomous vehicles*, 2021.
-- Oquab et al., *DINOv2: Learning Robust Visual Features without Supervision*, TMLR 2024; Darcet et al., *Vision Transformers Need Registers*, ICLR 2024.
+- Dauner et al., *NAVSIM: Data-Driven Non-Reactive Autonomous Vehicle Simulation and Benchmarking*, NeurIPS 2024. [arXiv:2406.15349](https://arxiv.org/abs/2406.15349)
+- OpenScene Contributors, *OpenScene: The Largest Up-to-Date 3D Occupancy Prediction Benchmark in Autonomous Driving*, 2023. [github.com/OpenDriveLab/OpenScene](https://github.com/OpenDriveLab/OpenScene)
+- Caesar et al., *nuPlan: A closed-loop ML-based planning benchmark for autonomous vehicles*, 2021. [arXiv:2106.11810](https://arxiv.org/abs/2106.11810)
+- Oquab et al., *DINOv2: Learning Robust Visual Features without Supervision*, TMLR 2024. [arXiv:2304.07193](https://arxiv.org/abs/2304.07193)
+- Darcet et al., *Vision Transformers Need Registers*, ICLR 2024. [arXiv:2309.16588](https://arxiv.org/abs/2309.16588)
