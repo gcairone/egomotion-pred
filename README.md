@@ -43,7 +43,7 @@ All learned models also receive the driving command.
 - **The gain grows with the horizon.** At 1 s C is slightly worse than A (0.17 vs 0.14 m); at 4 s it is clearly better (1.66 vs 2.04 m).
 - **The camera anticipates braking, but does not help once braking has started.** C cuts the FDE by 37 % at the onset of strong braking, and is 3 % worse during braking already under way.
 
-## How it works
+## Architecture
 
 **Data.**
 - The source archives are far larger than the local disk, so everything is processed shard by shard, tracked in a SQLite manifest so runs can resume.
