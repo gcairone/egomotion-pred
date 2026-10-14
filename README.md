@@ -6,8 +6,19 @@ question is **how much the camera adds on top of kinematics, and in which situat
 model is therefore reported next to a kinematics-only twin and a physics baseline, broken down
 by scenario.
 
-Main dataset: [NAVSIM](https://github.com/autonomousvision/navsim) (`navtrain` / `navtest`),
-built on [OpenScene](https://github.com/OpenDriveLab/OpenScene) / [nuPlan](https://www.nuscenes.org/nuplan).
+- **Input:**
+  - front camera (CAM_F0) at t0 − 1.5, −1.0, −0.5 and 0 s;
+  - ego poses over the same 2 s, plus current velocity, acceleration and yaw rate;
+  - the NAVSIM driving command.
+- **Output:** 8 future waypoints (x, y, yaw) at 0.5 s steps, a 4 s horizon, in the ego frame at t0.
+- **Metrics:**
+  - ADE / FDE of the most likely trajectory;
+  - miss rate (FDE > 2 m);
+  - lateral and longitudinal error relative to the true heading;
+  - minADE for multimodal models.
+
+  Results are also split by scenario: turn left / right, curve, lateral shift, brake, accelerate, start, cruise. These are open-loop displacement metrics, not the closed-loop NAVSIM PDM score: the question is prediction quality, not driving.
+- **Data:** [NAVSIM](https://github.com/autonomousvision/navsim) (`navtrain` / `navtest`), built on [OpenScene](https://github.com/OpenDriveLab/OpenScene) / [nuPlan](https://www.nuscenes.org/nuplan).
 
 <p align="center"><img src="assets/turn_right.gif" width="100%"></p>
 <p align="center"><img src="assets/braking.gif" width="100%"></p>
@@ -37,17 +48,6 @@ On navtest (12,146 samples, drives never seen in training), errors are in metres
 - **The gain grows with the horizon.** At 1 s C is slightly worse than A (0.17 vs 0.14 m); at 4 s it is clearly better (1.66 vs 2.04 m).
 - **The camera anticipates braking but does not help once it has started.** At the onset of strong braking C cuts the FDE by 37 %; during braking that is already under way it is 3 % worse.
 
-## Problem setup
-
-| | |
-|---|---|
-| Input | front camera (CAM_F0) at t0 − 1.5, −1.0, −0.5, 0 s; ego poses over the same 2 s; current velocity, acceleration and yaw rate; NAVSIM driving command |
-| Output | 8 future waypoints (x, y, yaw) at 0.5 s steps, 4 s horizon, in the ego frame at t0 |
-| Metrics | ADE / FDE of the top-1 trajectory, miss rate (FDE > 2 m), lateral / longitudinal error relative to the true heading, minADE for multimodal models, errors per horizon |
-| Stratification | scenario tags derived from the ground-truth future (turn left / right, curve, lateral shift, brake, accelerate, start, cruise), heading-change bands, braking phase, speed bands |
-
-The evaluation reports open-loop displacement metrics only, not the closed-loop NAVSIM PDM score: the question here is prediction quality, not driving.
-
 ## Data pipeline
 
 All data handling runs on a CPU machine with a ~75 GB data disk, against source archives several times that size, so everything is shard-by-shard, resumable and tracked in a SQLite manifest (`pending → done → verified`).
@@ -71,9 +71,9 @@ All data handling runs on a CPU machine with a ~75 GB data disk, against source 
 
 4. **Sanity gates.** Before any training the pipeline checks that projected ground-truth trajectories line up with the road, that video and pose are in sync (visual-odometry yaw rate vs pose yaw rate), that the baselines behave as expected, and that the model can overfit a small subset.
 
-## Visual features
+## Architecture
 
-The backbone is **frozen** and run once offline: training never decodes an image.
+**Visual features.** The backbone is **frozen** and run once offline: training never decodes an image.
 
 - **Backbone:** DINOv2 ViT-B/14 with registers (`vit_base_patch14_reg4_dinov2.lvd142m`, via timm), input 518×294.
 - **Per frame:**
@@ -81,9 +81,7 @@ The backbone is **frozen** and run once offline: training never decodes an image
   - the patch grid, average-pooled to 6×10 cells and projected to 256-d with a PCA fitted on 4,000 training frames.
 - **Size:** ~5 GB in float16 for ~170k frames, small enough to keep the whole training set resident in GPU memory. A full 30-epoch run takes 8–15 minutes on an RTX 3090.
 
-## Models
-
-All variants share one architecture and differ only in which tokens they see:
+**Model.** All variants share one transformer and differ only in which tokens they see:
 
 ```
 kinematics (history poses, v, a, yaw rate, command) ──► MLP ──► 1 token ┐
@@ -114,51 +112,6 @@ CLS of 4 frames            ──► linear + time embedding ──► 4 tokens 
 - **Train-time augmentation of the visual inputs:** Gaussian noise in feature-std units, and dropped past frames, grid cells or the whole vision input. Dropped tokens are masked out of the attention instead of being filled.
 - **A training-only auxiliary head** that predicts how the features of the frames at t0 + 1 s and t0 + 2 s change.
 - Together they are worth about 3–4 % ADE on navtest.
-
-## Detailed results
-
-FDE (m) on navtest by situation, A vs the final C:
-
-| situation | n | B0 | A | C (final) | C vs A |
-|---|---|---|---|---|---|
-| all | 12,146 | 5.97 | 2.04 | 1.66 | −19 % |
-| curve | 1,789 | 5.34 | 2.48 | 1.77 | −29 % |
-| turn left | 1,473 | 4.85 | 2.31 | 1.68 | −27 % |
-| turn right | 842 | 6.35 | 2.59 | 1.95 | −25 % |
-| lateral shift | 474 | 4.70 | 2.13 | 1.74 | −18 % |
-| straight (heading change < 5°) | 6,399 | 6.50 | 1.76 | 1.57 | −11 % |
-| sharp turn (≥ 45°) | 1,517 | 5.83 | 2.48 | 1.82 | −27 % |
-| braking under way (a < −1 m/s²) | 1,135 | 10.01 | 1.27 | 1.31 | +3 % |
-| braking onset | 561 | 6.48 | 3.52 | 2.53 | −28 % |
-| strong braking onset (Δv > 3 m/s) | 223 | 7.90 | 4.66 | 2.96 | −37 % |
-| start / acceleration onset | 637 | 6.51 | 2.70 | 1.95 | −28 % |
-
-L2 error of the top-1 trajectory by horizon (m), navtest:
-
-| model | 1 s | 2 s | 3 s | 4 s |
-|---|---|---|---|---|
-| A | **0.14** | **0.45** | 1.08 | 2.04 |
-| C | 0.19 | 0.48 | 0.98 | 1.68 |
-| C (final) | 0.17 | **0.45** | **0.95** | **1.66** |
-
-Validation split (11,364 samples): A 0.749 / 1.94, C 0.681 / 1.60, final C 0.661 / 1.59 (ADE / FDE).
-
-**What did not help**
-- **Vision without the kinematic history (B)** is the weakest learned model, mostly longitudinally (1.05 m error).
-- **CLS-only vs CLS + grid** are within noise once the inputs are augmented.
-- **Curating away trivially predictable samples** (dropping 80% of those where B0 is already under 1 m) made both A and C slightly worse.
-- **Stronger regularisation** (dropout 0.2, weight decay 0.05) made C worse.
-- **Predicting future features as an auxiliary task** added at most 1 % on top of augmentation, within seed noise, and the head itself explains only ~10 % of the feature change.
-
-The consistent picture is that the remaining error, mostly longitudinal, is limited by what a single frozen front-camera embedding contains, not by the amount of supervision.
-
-## Limitations
-
-- Front camera only: no map, no other cameras, no detected agents.
-- The backbone is frozen and features are pooled to 6×10 cells, so small or distant cues (traffic lights, a braking car far ahead) are largely lost.
-- Open-loop metrics only.
-- Most comparisons use a single seed. Repeated seeds on B and C moved ADE by less than 0.01 m, well below the A–C gap.
-- NAVSIM speeds stay below ~17 m/s, so nothing here says anything about highway driving.
 
 ## Repository layout
 
